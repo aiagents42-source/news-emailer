@@ -2,51 +2,62 @@ import axios from 'axios';
 import { newsSources } from './sources';
 import { checkIfNewsExists, insertNews } from './supabase';
 
+const stripCDATA = (s: string) => s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+
 export async function runScraper() {
   console.log('Starting scraper...');
-  const allArticles = [];
+  const allArticles: any[] = [];
 
   for (const source of newsSources) {
     try {
-      const { data } = await axios.get(source.url, { timeout: 10000 });
+      const { data } = await axios.get(source.url, {
+        timeout: 15000,
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/1.0; +https://news-emailer-silk.vercel.app)' }
+      });
 
-      // Parse RSS feed
-      const itemMatches = data.match(/<item>[\s\S]*?<\/item>/g) || [];
+      const itemMatches = data.match(/<item[\s\S]*?<\/item>/g) || [];
       const articles = itemMatches.slice(0, 5).map((item: string) => {
-        const titleMatch = item.match(/<title[^>]*>([^<]+)<\/title>/);
-        const linkMatch = item.match(/<link[^>]*>([^<]+)<\/link>/);
-        const descMatch = item.match(/<description[^>]*>([^<]*)<\/description>/);
+        const titleMatch = item.match(/<title[^>]*>([\s\S]*?)<\/title>/);
+        const linkMatch = item.match(/<link[^>]*>([\s\S]*?)<\/link>/);
+        const descMatch = item.match(/<description[^>]*>([\s\S]*?)<\/description>/);
+        const pubMatch = item.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/);
 
-        const headline = titleMatch ? titleMatch[1].trim().slice(0, 200) : '';
-        const url = linkMatch ? linkMatch[1].trim() : '';
-        const summary = descMatch ? descMatch[1].trim().slice(0, 200) : '';
+        const headline = titleMatch ? stripCDATA(titleMatch[1]).slice(0, 200) : '';
+        const url = linkMatch ? stripCDATA(linkMatch[1]).trim() : '';
+        const rawSummary = descMatch ? stripCDATA(descMatch[1]) : '';
+        // Strip any remaining HTML tags from summary
+        const summary = rawSummary.replace(/<[^>]+>/g, '').trim().slice(0, 500);
+        const publishedAt = pubMatch ? new Date(pubMatch[1].trim()).toISOString() : new Date().toISOString();
 
-        if (!headline || !url) return null;
-        return { headline, url, source: source.name, category: source.category, summary };
+        if (!headline || !url || url.startsWith('http') === false) return null;
+        return { headline, url, source: source.name, category: source.category, summary, publishedAt };
       }).filter(Boolean);
 
+      console.log(`✓ ${source.name}: ${articles.length} articles`);
       allArticles.push(...articles);
     } catch (err) {
-      console.error(`Failed to scrape ${source.name}`);
+      console.error(`✗ Failed to scrape ${source.name}`);
     }
   }
 
-  // Add test data if no articles found (for demonstration)
-  if (allArticles.length === 0) {
-    allArticles.push(
-      { headline: 'Stock Market Reaches New Heights', url: 'https://example.com/stock-1', source: 'Test', category: 'business_global', summary: 'Global markets show positive growth' },
-      { headline: 'Indian Tech Companies Expand Internationally', url: 'https://example.com/india-1', source: 'Test', category: 'business_india', summary: 'Major Indian IT firms expanding abroad' },
-      { headline: 'Virtual Events Conference 2026', url: 'https://example.com/event-1', source: 'Test', category: 'events', summary: 'New virtual events conference announced' }
-    );
-  }
+  if (allArticles.length === 0) return { success: true, inserted: 0 };
 
-  const unique = [];
-  const urls = new Set();
+  const unique: any[] = [];
+  const urls = new Set<string>();
   for (const article of allArticles) {
     if (!urls.has(article.url)) {
       urls.add(article.url);
       const exists = await checkIfNewsExists(article.url).catch(() => false);
-      if (!exists) unique.push({...article, scraped_at: new Date().toISOString(), published_at: new Date().toISOString(), metrics: null});
+      if (!exists) unique.push({
+        headline: article.headline,
+        url: article.url,
+        source: article.source,
+        category: article.category,
+        summary: article.summary || null,
+        scraped_at: new Date().toISOString(),
+        published_at: article.publishedAt,
+        metrics: null
+      });
     }
   }
 
