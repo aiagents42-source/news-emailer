@@ -1,0 +1,47 @@
+
+> news-emailer@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.9 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.3:3000
+- Environments: .env.local
+✓ Ready in 261ms
+
+ GET / 200 in 1779ms (next.js: 1694ms, application-code: 85ms)
+ GET /api/stats 500 in 311ms (next.js: 302ms, application-code: 9ms)
+ GET / 200 in 24ms (next.js: 3ms, application-code: 21ms)
+ GET /api/stats 500 in 7ms (next.js: 2ms, application-code: 5ms)
+ GET /api/news 500 in 124ms (next.js: 122ms, application-code: 2ms)
+ GET /api/search?q=test 500 in 67ms (next.js: 62ms, application-code: 5ms)
+ GET /api/cron/scrape 401 in 601ms (next.js: 598ms, application-code: 3ms)
+Starting scraper...
+Failed to scrape Reuters
+Failed to scrape Bloomberg
+Failed to scrape Event Magazine
+ GET /api/cron/scrape 200 in 1213ms (next.js: 1119µs, application-code: 1212ms)
+  Reload env: .env.local
+ GET / 200 in 130ms (next.js: 89ms, application-code: 42ms)
+Starting scraper...
+Failed to scrape Reuters
+Failed to scrape Bloomberg
+Failed to scrape Event Magazine
+ GET /api/cron/scrape 200 in 3.6s (next.js: 159ms, application-code: 3.4s)
+Starting scraper...
+Failed to scrape Reuters
+Failed to scrape Bloomberg
+Failed to scrape Event Magazine
+ GET /api/cron/scrape 200 in 1063ms (next.js: 6ms, application-code: 1057ms)
+Email error: Error: Invalid supabaseUrl: Provided URL is malformed.
+    at initSupabase (lib/supabase.ts:9:41)
+    at getSupabase (lib/supabase.ts:14:25)
+    at sendAllEmails (lib/emailer.ts:12:27)
+    at GET (app/api/cron/send-email/route.ts:5:38)
+   7 |   const key = process.env.SUPABASE_ANON_KEY;
+   8 |   if (!url || !key) throw new Error('Missing Supabase credentials');
+>  9 |   if (!supabase) supabase = createClient(url, key);
+     |                                         ^
+  10 |   return supabase;
+  11 | }
+  12 |
+ GET /api/cron/send-email 200 in 892ms (next.js: 749ms, application-code: 143ms)
