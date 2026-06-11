@@ -1,7 +1,8 @@
 'use client';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
-export default function Search() {
+import { useEffect, useState, Suspense } from 'react';
+
+function SearchContent() {
   const query = useSearchParams().get('q');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(!!query);
@@ -27,4 +28,8 @@ export default function Search() {
       ))}
     </div>
   );
+}
+
+export default function Search() {
+  return <Suspense fallback={<div style={{padding: '40px'}}>Loading...</div>}><SearchContent /></Suspense>;
 }

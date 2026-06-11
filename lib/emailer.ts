@@ -15,14 +15,14 @@ export async function sendAllEmails() {
       .select('*')
       .in('category', ['business_india', 'business_global'])
       .order('published_at', { ascending: false })
-      .limit(10);
+      .limit(10) as { data: any[] };
 
     const { data: events } = await sb
       .from('news')
       .select('*')
       .eq('category', 'events')
       .order('published_at', { ascending: false })
-      .limit(5);
+      .limit(5) as { data: any[] };
 
     if (business?.length || events?.length) {
       const businessHtml = (business || [])

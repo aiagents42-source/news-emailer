@@ -40,6 +40,6 @@ export async function runScraper() {
   }
 
   if (unique.length === 0) return { success: true, inserted: 0 };
-  await insertNews(unique);
+  await insertNews(unique as any);
   return { success: true, inserted: unique.length };
 }

@@ -54,7 +54,7 @@ export async function searchNews(query: string, limit: number = 20) {
 
 export async function insertNews(newsItems: Omit<NewsItem, 'id' | 'created_at'>[]) {
   const sb = getSupabase();
-  const { data, error } = await sb.from('news').insert(newsItems).select();
+  const { data, error } = await sb.from('news').insert(newsItems as any).select();
   if (error) throw error;
   return data as NewsItem[];
 }
