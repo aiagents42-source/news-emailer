@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 export default function Business() {
-  const [news, setNews] = useState([]);
+  const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     Promise.all([

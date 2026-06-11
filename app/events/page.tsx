@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 export default function Events() {
-  const [news, setNews] = useState([]);
+  const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     fetch('/api/news?category=events&limit=20')
