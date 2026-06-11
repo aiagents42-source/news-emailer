@@ -6,47 +6,38 @@ import { checkIfNewsExists, insertNews } from './supabase';
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 const stripCDATA = (s: string) => s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim();
+const stripHTML  = (s: string) => s.replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+const wordCount  = (s: string) => s.split(/\s+/).filter(Boolean).length;
 
-// Fetch the actual article page and extract 150-200 word summary
+// Only fetch article page if RSS summary is too short (saves time on Vercel)
 async function fetchArticleSummary(url: string): Promise<string> {
   try {
     const { data } = await axios.get(url, {
-      timeout: 8000,
+      timeout: 6000,
       headers: { 'User-Agent': USER_AGENT }
     });
     const $ = cheerio.load(data);
+    $('script, style, nav, header, footer, aside, .ad, .advertisement, .related, figure').remove();
 
-    // Remove junk elements
-    $('script, style, nav, header, footer, aside, .ad, .advertisement, .social, .related, .comments, figure').remove();
-
-    // Extract paragraphs from article body
+    // Try known article selectors first
     const selectors = ['article p', '.article-body p', '.story-body p', '.content p', '.post-content p', 'main p', 'p'];
-    let paragraphs: string[] = [];
-
-    for (const selector of selectors) {
-      const found = $(selector).map((_, el) => $(el).text().trim()).get().filter(t => t.length > 60);
-      if (found.length >= 2) { paragraphs = found; break; }
+    for (const sel of selectors) {
+      const paras = $(sel).map((_, el) => $(el).text().trim()).get().filter(t => t.length > 60);
+      if (paras.length >= 2) {
+        const text = paras.join(' ').replace(/\s+/g, ' ').trim();
+        const words = text.split(' ');
+        return words.length > 160 ? words.slice(0, 160).join(' ') + '...' : text;
+      }
     }
-
-    // Join paragraphs and trim to 150-200 words
-    const fullText = paragraphs.join(' ').replace(/\s+/g, ' ').trim();
-    const words = fullText.split(' ');
-    if (words.length > 150) {
-      return words.slice(0, 180).join(' ') + '...';
-    }
-    return fullText.slice(0, 900);
-  } catch {
-    return '';
-  }
+  } catch { /* silent fail */ }
+  return '';
 }
 
 async function isUrlAccessible(url: string): Promise<boolean> {
   try {
-    const res = await axios.head(url, { timeout: 5000, maxRedirects: 3, headers: { 'User-Agent': USER_AGENT } });
+    const res = await axios.head(url, { timeout: 4000, maxRedirects: 3, headers: { 'User-Agent': USER_AGENT } });
     return res.status >= 200 && res.status < 400;
-  } catch {
-    return true; // Some sites block HEAD — assume accessible
-  }
+  } catch { return true; }
 }
 
 export async function runScraper() {
@@ -56,25 +47,24 @@ export async function runScraper() {
   for (const source of newsSources) {
     try {
       const { data } = await axios.get(source.url, {
-        timeout: 15000,
+        timeout: 12000,
         headers: { 'User-Agent': USER_AGENT }
       });
 
       const itemMatches = data.match(/<item[\s\S]*?<\/item>/g) || [];
       const articles = itemMatches.slice(0, 5).map((item: string) => {
-        const titleMatch  = item.match(/<title[^>]*>([\s\S]*?)<\/title>/);
-        const linkMatch   = item.match(/<link[^>]*>([\s\S]*?)<\/link>/);
-        const descMatch   = item.match(/<description[^>]*>([\s\S]*?)<\/description>/);
+        const titleMatch   = item.match(/<title[^>]*>([\s\S]*?)<\/title>/);
+        const linkMatch    = item.match(/<link[^>]*>([\s\S]*?)<\/link>/);
+        const descMatch    = item.match(/<description[^>]*>([\s\S]*?)<\/description>/);
         const contentMatch = item.match(/<content:encoded[^>]*>([\s\S]*?)<\/content:encoded>/);
-        const pubMatch    = item.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/);
+        const pubMatch     = item.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/);
 
         const headline = titleMatch ? stripCDATA(titleMatch[1]).slice(0, 200) : '';
-        const url = linkMatch ? stripCDATA(linkMatch[1]).trim() : '';
+        const url      = linkMatch  ? stripCDATA(linkMatch[1]).trim() : '';
 
-        // RSS description as fallback summary
-        const rawDesc = descMatch ? stripCDATA(descMatch[1]) : '';
-        const rawContent = contentMatch ? stripCDATA(contentMatch[1]) : '';
-        const rssSummary = (rawDesc || rawContent).replace(/<[^>]+>/g, '').replace(/&[a-z]+;/g, ' ').trim().slice(0, 500);
+        const rawDesc    = descMatch    ? stripHTML(stripCDATA(descMatch[1]))    : '';
+        const rawContent = contentMatch ? stripHTML(stripCDATA(contentMatch[1])) : '';
+        const rssSummary = (rawDesc.length > rawContent.length ? rawDesc : rawContent).slice(0, 600);
 
         const publishedAt = pubMatch ? new Date(pubMatch[1].trim()).toISOString() : new Date().toISOString();
 
@@ -84,8 +74,8 @@ export async function runScraper() {
 
       console.log(`✓ ${source.name}: ${articles.length} articles`);
       allArticles.push(...articles);
-    } catch (err) {
-      console.error(`✗ Failed to scrape ${source.name}`);
+    } catch {
+      console.error(`✗ Failed: ${source.name}`);
     }
   }
 
@@ -102,27 +92,24 @@ export async function runScraper() {
     if (exists) continue;
 
     const accessible = await isUrlAccessible(article.url);
-    if (!accessible) {
-      console.log(`✗ Skipping inaccessible: ${article.url}`);
-      continue;
-    }
+    if (!accessible) { console.log(`✗ Skip inaccessible: ${article.url}`); continue; }
 
-    // Fetch full article content for 150-200 word summary
+    // If RSS summary is too short (<30 words), fetch article page for full summary
     let summary = article.rssSummary;
-    const articleSummary = await fetchArticleSummary(article.url);
-    if (articleSummary && articleSummary.split(' ').length > 30) {
-      summary = articleSummary; // Use full article summary if richer
+    if (wordCount(summary) < 30) {
+      const fetched = await fetchArticleSummary(article.url);
+      if (wordCount(fetched) > wordCount(summary)) summary = fetched;
     }
 
     unique.push({
-      headline: article.headline,
-      url: article.url,
-      source: article.source,
-      category: article.category,
-      summary: summary || null,
-      scraped_at: new Date().toISOString(),
+      headline:    article.headline,
+      url:         article.url,
+      source:      article.source,
+      category:    article.category,
+      summary:     summary || null,
+      scraped_at:  new Date().toISOString(),
       published_at: article.publishedAt,
-      metrics: null
+      metrics:     null
     });
   }
 
