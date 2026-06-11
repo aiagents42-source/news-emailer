@@ -1,5 +1,4 @@
 import axios from 'axios';
-import * as cheerio from 'cheerio';
 import { newsSources } from './sources';
 import { checkIfNewsExists, insertNews } from './supabase';
 
@@ -10,17 +9,22 @@ export async function runScraper() {
   for (const source of newsSources) {
     try {
       const { data } = await axios.get(source.url, { timeout: 10000 });
-      const $ = cheerio.load(data);
-      const articles = $('article, div[class*="news"], div[class*="story"]')
-        .slice(0, 5)
-        .map((_, el) => {
-          const headline = $(el).find('h2, h3, a').first().text().trim().slice(0, 200);
-          const url = $(el).find('a').first().attr('href') || '';
-          if (!headline || !url) return null;
-          return { headline, url, source: source.name, category: source.category };
-        })
-        .get()
-        .filter(Boolean);
+
+      // Parse RSS feed
+      const itemMatches = data.match(/<item>[\s\S]*?<\/item>/g) || [];
+      const articles = itemMatches.slice(0, 5).map((item: string) => {
+        const titleMatch = item.match(/<title[^>]*>([^<]+)<\/title>/);
+        const linkMatch = item.match(/<link[^>]*>([^<]+)<\/link>/);
+        const descMatch = item.match(/<description[^>]*>([^<]*)<\/description>/);
+
+        const headline = titleMatch ? titleMatch[1].trim().slice(0, 200) : '';
+        const url = linkMatch ? linkMatch[1].trim() : '';
+        const summary = descMatch ? descMatch[1].trim().slice(0, 200) : '';
+
+        if (!headline || !url) return null;
+        return { headline, url, source: source.name, category: source.category, summary };
+      }).filter(Boolean);
+
       allArticles.push(...articles);
     } catch (err) {
       console.error(`Failed to scrape ${source.name}`);
@@ -35,7 +39,7 @@ export async function runScraper() {
     if (!urls.has(article.url)) {
       urls.add(article.url);
       const exists = await checkIfNewsExists(article.url).catch(() => false);
-      if (!exists) unique.push({...article, scraped_at: new Date().toISOString(), published_at: new Date().toISOString(), summary: null, metrics: null});
+      if (!exists) unique.push({...article, scraped_at: new Date().toISOString(), published_at: new Date().toISOString(), metrics: null});
     }
   }
 
