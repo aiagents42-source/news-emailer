@@ -33,9 +33,11 @@ function sectionHeader(emoji: string, title: string, color: string) {
 export async function sendAllEmails() {
   try {
     const sb = getSupabase();
-    const { data: indiaNews } = await sb.from('news').select('*').eq('category', 'business_india').order('published_at', { ascending: false }).limit(5) as { data: any[] };
-    const { data: globalNews } = await sb.from('news').select('*').eq('category', 'business_global').order('published_at', { ascending: false }).limit(5) as { data: any[] };
-    const { data: eventsNews } = await sb.from('news').select('*').eq('category', 'events').order('published_at', { ascending: false }).limit(5) as { data: any[] };
+    // Fetch today's news only (last 24 hours)
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: indiaNews } = await sb.from('news').select('*').eq('category', 'business_india').gte('scraped_at', since).order('published_at', { ascending: false }).limit(7) as { data: any[] };
+    const { data: globalNews } = await sb.from('news').select('*').eq('category', 'business_global').gte('scraped_at', since).order('published_at', { ascending: false }).limit(5) as { data: any[] };
+    const { data: eventsNews } = await sb.from('news').select('*').eq('category', 'events').gte('scraped_at', since).order('published_at', { ascending: false }).limit(5) as { data: any[] };
 
     const today = format(new Date(), 'EEEE, MMMM d yyyy');
 
